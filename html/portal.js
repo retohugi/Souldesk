@@ -135,6 +135,198 @@ function saveDeviceConfig() {
     return false;
 }
 
+// Project Management Functions
+async function loadProjects() {
+    try {
+        const response = await fetch('/api/projects');
+        const data = await response.json();
+        allProjects = data.projects || []; // Store globally
+        renderProjectsOverview(allProjects);
+    } catch (error) {
+        console.error('Failed to load projects:', error);
+        document.getElementById('projects-overview').innerHTML = '<p class="error">Failed to load projects</p>';
+    }
+}
+
+function renderProjectsOverview(projects) {
+    const container = document.getElementById('projects-overview');
+    
+    if (!projects || projects.length === 0) {
+        container.innerHTML = '<p>No PostHog projects configured yet. Add your first project to get started.</p>';
+        return;
+    }
+    
+    let html = '<div class="projects-grid">';
+    projects.forEach(project => {
+        html += `
+            <div class="project-card" style="border-left: 4px solid ${project.color}">
+                <div class="project-header">
+                    <h4>${project.name}</h4>
+                </div>
+                <div class="project-details">
+                    <p><strong>Region:</strong> ${project.region.toUpperCase()}</p>
+                    <p><strong>Team ID:</strong> ${project.teamId}</p>
+                    <p><strong>API Key:</strong> ${project.apiKey}</p>
+                </div>
+                <div class="project-actions">
+                    <button onclick="editProject('${project.id}')">Edit</button>
+                    <button onclick="deleteProject('${project.id}')">Delete</button>
+                </div>
+            </div>
+        `;
+    });
+    html += '</div>';
+    
+    container.innerHTML = html;
+}
+
+function showProjectForm(projectId = null) {
+    const form = document.getElementById('project-config');
+    const title = document.getElementById('project-form-title');
+    
+    if (projectId) {
+        title.textContent = 'Edit PostHog Project';
+        // Form will be populated by editProject function
+    } else {
+        title.textContent = 'Add PostHog Project';
+        document.getElementById('project-form').reset();
+        document.getElementById('project-edit-id').value = '';
+        document.getElementById('project-color').value = '#1f77b4';
+    }
+    
+    form.style.display = 'block';
+}
+
+function cancelProjectEdit() {
+    document.getElementById('project-config').style.display = 'none';
+    document.getElementById('project-form').reset();
+}
+
+function saveProjectConfig() {
+    const form = document.getElementById('project-form');
+    const formData = new FormData(form);
+    
+    // Add the hidden edit ID if present
+    const editId = document.getElementById('project-edit-id').value;
+    if (editId) {
+        formData.append('id', editId);
+    }
+    
+    // Convert FormData to URLSearchParams for proper form encoding
+    const projectData = new URLSearchParams();
+    for (const [key, value] of formData.entries()) {
+        projectData.append(key, value);
+    }
+    
+    fetch('/api/projects', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: projectData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            loadProjects(); // Refresh display
+            cancelProjectEdit();
+            showGlobalStatus(data.message || 'Project saved successfully', 'success');
+        } else {
+            showGlobalStatus(data.message || 'Failed to save project', 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error saving project:', error);
+        showGlobalStatus('Communication error saving project', 'error');
+    });
+    
+    return false;
+}
+
+function testProjectConnection() {
+    const formData = new FormData(document.getElementById('project-form'));
+    const projectData = Object.fromEntries(formData.entries());
+    
+    fetch('/api/projects/test', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: new URLSearchParams(projectData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showGlobalStatus('✓ Project configuration valid', 'success');
+        } else {
+            showGlobalStatus('✗ ' + (data.message || 'Invalid project configuration'), 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error testing project:', error);
+        showGlobalStatus('Connection test failed', 'error');
+    });
+}
+
+function showGlobalStatus(message, type) {
+    const statusEl = document.getElementById('global-action-status');
+    if (statusEl) {
+        statusEl.textContent = message;
+        statusEl.className = `status-message ${type}`;
+        statusEl.style.display = 'block';
+        setTimeout(() => {
+            statusEl.style.display = 'none';
+            statusEl.textContent = '';
+            statusEl.className = 'status-message';
+        }, 5000);
+    }
+}
+
+// Global projects array for management
+let allProjects = [];
+
+function editProject(projectId) {
+    const project = allProjects.find(p => p.id === projectId);
+    if (!project) {
+        showGlobalStatus('Project not found', 'error');
+        return;
+    }
+    
+    // Populate form with project data
+    document.getElementById('project-edit-id').value = project.id;
+    document.getElementById('project-name').value = project.name;
+    document.getElementById('project-region').value = project.region;
+    document.getElementById('project-team-id').value = project.teamId;
+    document.getElementById('project-api-key').value = ''; // Don't populate masked key
+    document.getElementById('project-color').value = project.color;
+    
+    showProjectForm(projectId);
+}
+
+function deleteProject(projectId) {
+    if (!confirm('Are you sure you want to delete this project? This will also remove all associated cards.')) {
+        return;
+    }
+    
+    const formData = new URLSearchParams();
+    formData.append('id', projectId);
+    
+    fetch('/api/projects/delete', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            loadProjects(); // Refresh display
+            showGlobalStatus('Project deleted successfully', 'success');
+        } else {
+            showGlobalStatus(data.message || 'Failed to delete project', 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error deleting project:', error);
+        showGlobalStatus('Communication error deleting project', 'error');
+    });
+}
+
 // Toggle API key visibility
 function toggleApiKeyVisibility() {
     const apiKeyInput = document.getElementById('apiKey');
@@ -809,6 +1001,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Initialize card management with a small delay to avoid overwhelming the device
     setTimeout(() => {
+        loadProjects(); // Load PostHog projects
         loadCardDefinitions();
         setTimeout(() => {
             loadConfiguredCards();

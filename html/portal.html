@@ -47,32 +47,53 @@
             <p>DeskHog is a tiny platform for having fun with code, hardware and the internet. Check out the <a href="https://github.com/posthog/deskhog/blob/main/README.md" target="_blank">readme</a> to get hacking, especially the <a href="https://github.com/posthog/deskhog/blob/main/tech-details.md" target="_blank">tech details file</a>.</p>
         </div>
 
-        <h2>PostHog API configuration</h2>
+        <h2>PostHog Projects</h2>
 
         <div class="config-section">
-            <form id="device-form" onsubmit="return saveDeviceConfig()">
+            <div id="projects-overview">
+                <!-- Project cards will be populated by JavaScript -->
+                <p>Loading projects...</p>
+            </div>
+            <div class="button-container">
+                <button type="button" id="add-project-btn" onclick="showProjectForm()">Add New Project</button>
+            </div>
+        </div>
+
+        <!-- Project Configuration Form (hidden by default) -->
+        <div id="project-config" class="config-section" style="display:none;">
+            <h3 id="project-form-title">Add PostHog Project</h3>
+            <form id="project-form" onsubmit="return saveProjectConfig()">
+                <input type="hidden" id="project-edit-id" name="id" value="">
                 <div class="form-group">
-                    <label for="region">Region</label>
-                    <select name="region" id="region" required>
+                    <label for="project-name">Project Name</label>
+                    <input type="text" id="project-name" name="name" placeholder="My App" required>
+                </div>
+                <div class="form-group">
+                    <label for="project-region">Region</label>
+                    <select id="project-region" name="region" required>
                         <option value="">Select a region</option>
                         <option value="us">US</option>
                         <option value="eu">EU</option>
                     </select>
                 </div>
                 <div class="form-group">
-                    <label for="teamId">Team ID</label>
-                    <input type="text" name="teamId" id="teamId" min="-1" required>
+                    <label for="project-team-id">Team ID</label>
+                    <input type="text" id="project-team-id" name="teamId" placeholder="12345" required>
                     <p class="tip">This is the numeral that appears at the end of the URL when you're looking at your <a href="https://app.posthog.com/" target="_blank">project's homepage dashboard</a>.</p>
                 </div>
-                
                 <div class="form-group">
-                    <label for="apiKey">API key</label>
-                    <input type="text" name="apiKey" id="apiKey">
+                    <label for="project-api-key">API Key</label>
+                    <input type="password" id="project-api-key" name="apiKey" placeholder="phx_...">
                     <p class="tip">Create a <a href="https://app.posthog.com/settings/user-api-keys" target="_blank">new API key in your project settings</a>. Give it read access to insights.</p>
                 </div>
-                
+                <div class="form-group">
+                    <label for="project-color">Color</label>
+                    <input type="color" id="project-color" name="color" value="#1f77b4">
+                </div>
                 <div class="button-container">
-                    <button type="submit">Save API configuration</button>
+                    <button type="submit">Save Project</button>
+                    <button type="button" onclick="cancelProjectEdit()">Cancel</button>
+                    <button type="button" onclick="testProjectConnection()">Test Connection</button>
                 </div>
             </form>
         </div>
