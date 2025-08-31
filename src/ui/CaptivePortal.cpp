@@ -62,6 +62,8 @@ void CaptivePortal::begin() {
     _server.on("/save-wifi", HTTP_OPTIONS, std::bind(&CaptivePortal::handleCorsPreflight, this, std::placeholders::_1));
     _server.on("/save-device-config", HTTP_OPTIONS, std::bind(&CaptivePortal::handleCorsPreflight, this, std::placeholders::_1));
     _server.on("/start-update", HTTP_OPTIONS, std::bind(&CaptivePortal::handleCorsPreflight, this, std::placeholders::_1));
+    _server.on("/api/projects", HTTP_OPTIONS, std::bind(&CaptivePortal::handleCorsPreflight, this, std::placeholders::_1));
+    _server.on("/api/projects/test", HTTP_OPTIONS, std::bind(&CaptivePortal::handleCorsPreflight, this, std::placeholders::_1));
     // _server.on("/check-update", HTTP_OPTIONS, std::bind(&CaptivePortal::handleCorsPreflight, this, std::placeholders::_1)); // Usually GET, but if POST later
     // _server.on("/update-status", HTTP_OPTIONS, std::bind(&CaptivePortal::handleCorsPreflight, this, std::placeholders::_1)); // Usually GET
 
@@ -87,11 +89,11 @@ void CaptivePortal::begin() {
     // Device config actions
     _server.on("/get-device-config", HTTP_GET, std::bind(&CaptivePortal::handleGetDeviceConfig, this, std::placeholders::_1));
 
-    // Project management actions
+    // Project management actions - specific routes first
+    _server.on("/api/projects/delete", HTTP_POST, std::bind(&CaptivePortal::handleDeleteProject, this, std::placeholders::_1));
+    _server.on("/api/projects/test", HTTP_POST, std::bind(&CaptivePortal::handleTestProject, this, std::placeholders::_1));
     _server.on("/api/projects", HTTP_GET, std::bind(&CaptivePortal::handleGetProjects, this, std::placeholders::_1));
     _server.on("/api/projects", HTTP_POST, std::bind(&CaptivePortal::handleSaveProject, this, std::placeholders::_1));
-    _server.on("/api/projects/test", HTTP_POST, std::bind(&CaptivePortal::handleTestProject, this, std::placeholders::_1));
-    _server.on("/api/projects/delete", HTTP_POST, std::bind(&CaptivePortal::handleDeleteProject, this, std::placeholders::_1));
 
     // Card management actions
     _server.on("/api/cards/definitions", HTTP_GET, std::bind(&CaptivePortal::handleGetCardDefinitions, this, std::placeholders::_1));
@@ -133,7 +135,7 @@ void CaptivePortal::begin() {
 void CaptivePortal::handleCorsPreflight(AsyncWebServerRequest *request) {
     AsyncWebServerResponse *response = request->beginResponse(204);
     response->addHeader("Access-Control-Allow-Origin", "*");
-    response->addHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    response->addHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
     response->addHeader("Access-Control-Allow-Headers", "Content-Type");
     request->send(response);
 }
@@ -276,8 +278,6 @@ void CaptivePortal::handleGetProjects(AsyncWebServerRequest *request) {
         projectObj["color"] = "#" + String(project.color, HEX);
     }
     
-    doc["defaultProject"] = _configManager.getDefaultProjectId();
-    
     String response;
     serializeJson(doc, response);
     AsyncWebServerResponse *webResponse = request->beginResponse(200, "application/json", response);
@@ -320,8 +320,6 @@ void CaptivePortal::handleSaveProject(AsyncWebServerRequest *request) {
         if (request->hasParam("apiKey", true) && !request->getParam("apiKey", true)->value().isEmpty()) {
             project.apiKey = request->getParam("apiKey", true)->value();
         }
-        
-        project.enabled = true; // All projects are enabled by default
         
         // Parse color from hex string (default to blue if not provided)
         if (request->hasParam("color", true)) {
@@ -386,10 +384,25 @@ void CaptivePortal::handleTestProject(AsyncWebServerRequest *request) {
 }
 
 void CaptivePortal::handleDeleteProject(AsyncWebServerRequest *request) {
+    Serial.printf("CaptivePortal: Delete project request received from %s\n", request->client()->remoteIP().toString().c_str());
+    Serial.printf("CaptivePortal: Method: %s, URL: %s\n", request->methodToString(), request->url().c_str());
+    
+    // Debug: Print all parameters
+    Serial.printf("CaptivePortal: Total params: %d\n", request->params());
+    for (int i = 0; i < request->params(); i++) {
+        const AsyncWebParameter* p = request->getParam(i);
+        Serial.printf("CaptivePortal: Param[%d]: name='%s', value='%s', isFile=%s, isPost=%s\n", 
+                     i, p->name().c_str(), p->value().c_str(), 
+                     p->isFile() ? "true" : "false", 
+                     p->isPost() ? "true" : "false");
+    }
+    
     if (request->hasParam("id", true)) {
         String projectId = request->getParam("id", true)->value();
+        Serial.printf("CaptivePortal: Deleting project with ID: %s\n", projectId.c_str());
         
         bool success = _configManager.removeProject(projectId);
+        Serial.printf("CaptivePortal: Delete result: %s\n", success ? "success" : "failed");
         
         DynamicJsonDocument doc(256);
         doc["success"] = success;
@@ -401,6 +414,7 @@ void CaptivePortal::handleDeleteProject(AsyncWebServerRequest *request) {
         webResponse->addHeader("Access-Control-Allow-Origin", "*");
         request->send(webResponse);
     } else {
+        Serial.println("CaptivePortal: Delete request missing project ID parameter");
         AsyncWebServerResponse *response = request->beginResponse(400, "application/json", "{\"error\":\"Missing project ID\"}");
         response->addHeader("Access-Control-Allow-Origin", "*");
         request->send(response);
@@ -441,7 +455,17 @@ void CaptivePortal::handle404(AsyncWebServerRequest *request) {
     // For any other request, also redirect to the root page in AP mode
     // Or, if WiFi is connected, could send a 404.
     // Assuming this is primarily for AP mode config.
-    Serial.printf("CaptivePortal: 404 for %s, redirecting to /\n", request->url().c_str());
+    Serial.printf("CaptivePortal: 404 for %s (method: %s), redirecting to /\n", 
+                  request->url().c_str(), 
+                  request->methodToString());
+    
+    // Check if this is an API request that should have been handled
+    if (request->url().startsWith("/api/")) {
+        Serial.printf("CaptivePortal: WARNING - API request not handled: %s\n", request->url().c_str());
+        request->send(404, "application/json", "{\"error\":\"API endpoint not found\"}");
+        return;
+    }
+    
     request->redirect("/");
 }
 

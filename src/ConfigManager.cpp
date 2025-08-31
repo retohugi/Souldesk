@@ -33,19 +33,19 @@ void ConfigManager::begin() {
 
 // Private helper to check and update API configuration state
 void ConfigManager::updateApiConfigurationState() {
-    // In multi-project mode, check if we have any enabled projects
+    // In multi-project mode, check if we have any valid projects
     if (isMultiProjectMode()) {
         std::vector<PostHogProject> projects = getProjects();
-        bool hasEnabledProject = false;
+        bool hasValidProject = false;
         
         for (const auto& project : projects) {
-            if (project.enabled && !project.teamId.isEmpty() && !project.apiKey.isEmpty()) {
-                hasEnabledProject = true;
+            if (!project.teamId.isEmpty() && !project.apiKey.isEmpty()) {
+                hasValidProject = true;
                 break;
             }
         }
         
-        if (hasEnabledProject) {
+        if (hasValidProject) {
             SystemController::setApiState(ApiState::API_CONFIGURED);
         } else {
             SystemController::setApiState(ApiState::API_AWAITING_CONFIG);
@@ -352,7 +352,6 @@ bool ConfigManager::updateProject(const String& projectId, const PostHogProject&
             p.region = project.region;
             p.teamId = project.teamId;
             p.apiKey = project.apiKey;
-            p.enabled = project.enabled;
             p.color = project.color;
             
             bool success = saveProjects(projects);
@@ -373,11 +372,6 @@ bool ConfigManager::removeProject(const String& projectId) {
     for (auto it = projects.begin(); it != projects.end(); ++it) {
         if (it->id == projectId) {
             projects.erase(it);
-            
-            // If this was the default project, clear default
-            if (getDefaultProjectId() == projectId) {
-                _preferences.remove(_defaultProjectKey);
-            }
             
             bool success = saveProjects(projects);
             if (success && _eventQueue) {
@@ -403,7 +397,6 @@ std::vector<PostHogProject> ConfigManager::getProjects() {
             singleProject.region = getRegion();
             singleProject.teamId = String(getTeamId());
             singleProject.apiKey = getApiKey();
-            singleProject.enabled = true;
             singleProject.color = 0x1f77b4;
             projects.push_back(singleProject);
         }
@@ -435,7 +428,6 @@ std::vector<PostHogProject> ConfigManager::getProjects() {
             project.region = obj["region"] | "us"; // Default to "us" if missing
             project.teamId = obj["teamId"].as<String>();
             project.apiKey = obj["apiKey"].as<String>();
-            project.enabled = obj["enabled"] | true; // Default to true if missing
             project.color = obj["color"] | 0x1f77b4; // Default color if missing
             
             projects.push_back(project);
@@ -470,29 +462,11 @@ bool ConfigManager::hasProject(const String& projectId) {
     return false;
 }
 
-void ConfigManager::setDefaultProject(const String& projectId) {
-    if (hasProject(projectId)) {
-        _preferences.putString(_defaultProjectKey, projectId);
-        commit();
-    }
-}
-
-String ConfigManager::getDefaultProjectId() {
-    return _preferences.getString(_defaultProjectKey, "");
-}
-
 PostHogProject ConfigManager::getDefaultProject() {
-    String defaultId = getDefaultProjectId();
-    if (!defaultId.isEmpty()) {
-        return getProject(defaultId);
-    }
-    
-    // Return first enabled project if no default set
+    // Return first project if any exist, otherwise return empty project
     std::vector<PostHogProject> projects = getProjects();
-    for (const auto& project : projects) {
-        if (project.enabled) {
-            return project;
-        }
+    if (!projects.empty()) {
+        return projects[0];
     }
     
     // Return empty project if none found
@@ -520,7 +494,6 @@ bool ConfigManager::migrateToMultiProject() {
     defaultProject.region = getRegion();
     defaultProject.teamId = String(getTeamId());
     defaultProject.apiKey = getApiKey();
-    defaultProject.enabled = true;
     defaultProject.color = 0x1f77b4;
     
     // Save as projects array
@@ -528,9 +501,6 @@ bool ConfigManager::migrateToMultiProject() {
     bool success = saveProjects(projects);
     
     if (success) {
-        // Set as default project
-        setDefaultProject(defaultProject.id);
-        
         // Enable multi-project mode
         _preferences.putBool(_multiProjectModeKey, true);
         commit();
@@ -558,7 +528,6 @@ bool ConfigManager::saveProjects(const std::vector<PostHogProject>& projects) {
         obj["region"] = project.region;
         obj["teamId"] = project.teamId;
         obj["apiKey"] = project.apiKey;
-        obj["enabled"] = project.enabled;
         obj["color"] = project.color;
     }
     

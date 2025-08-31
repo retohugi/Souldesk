@@ -7,6 +7,7 @@
 #include "config/CardConfig.h"
 
 /**
+/**
  * @brief PostHog project configuration structure
  */
 struct PostHogProject {
@@ -15,19 +16,18 @@ struct PostHogProject {
     String region;       // us/eu
     String teamId;       // PostHog team ID  
     String apiKey;       // API key
-    bool enabled;        // Active/inactive
     uint32_t color;      // Theme color for UI distinction
     
     /**
      * @brief Default constructor
      */
-    PostHogProject() : id(""), name(""), region("us"), teamId(""), apiKey(""), enabled(true), color(0x1f77b4) {}
+    PostHogProject() : id(""), name(""), region("us"), teamId(""), apiKey(""), color(0x1f77b4) {}
     
     /**
      * @brief Constructor with parameters
      */
     PostHogProject(const String& n, const String& r, const String& t, const String& a, uint32_t c = 0x1f77b4) 
-        : name(n), region(r), teamId(t), apiKey(a), enabled(true), color(c) {
+        : name(n), region(r), teamId(t), apiKey(a), color(c) {
         id = generateProjectId();
     }
     
@@ -303,7 +303,6 @@ private:
 
     // Multi-project storage keys
     const char* _projectsKey = "projects";        ///< Key for projects JSON array
-    const char* _defaultProjectKey = "default_project"; ///< Key for default project ID
     const char* _multiProjectModeKey = "multi_mode"; ///< Key for multi-project mode flag
 
     // Storage size limits
