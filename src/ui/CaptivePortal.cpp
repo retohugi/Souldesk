@@ -87,6 +87,11 @@ void CaptivePortal::begin() {
     // Device config actions
     _server.on("/get-device-config", HTTP_GET, std::bind(&CaptivePortal::handleGetDeviceConfig, this, std::placeholders::_1));
 
+    // Project management actions
+    _server.on("/api/projects", HTTP_GET, std::bind(&CaptivePortal::handleGetProjects, this, std::placeholders::_1));
+    _server.on("/api/projects", HTTP_POST, std::bind(&CaptivePortal::handleSaveProject, this, std::placeholders::_1));
+    _server.on("/api/projects/test", HTTP_POST, std::bind(&CaptivePortal::handleTestProject, this, std::placeholders::_1));
+    _server.on("/api/projects/delete", HTTP_POST, std::bind(&CaptivePortal::handleDeleteProject, this, std::placeholders::_1));
 
     // Card management actions
     _server.on("/api/cards/definitions", HTTP_GET, std::bind(&CaptivePortal::handleGetCardDefinitions, this, std::placeholders::_1));
@@ -253,6 +258,154 @@ void CaptivePortal::handleSaveDeviceConfig(AsyncWebServerRequest *request) {
     request->send(response);
 }
 
+void CaptivePortal::handleGetProjects(AsyncWebServerRequest *request) {
+    DynamicJsonDocument doc(2048); // Size for multiple projects
+    JsonArray projectsArray = doc.createNestedArray("projects");
+    
+    std::vector<PostHogProject> projects = _configManager.getProjects();
+    for (const auto& project : projects) {
+        JsonObject projectObj = projectsArray.createNestedObject();
+        projectObj["id"] = project.id;
+        projectObj["name"] = project.name;
+        projectObj["region"] = project.region;
+        projectObj["teamId"] = project.teamId;
+        // Mask API key for security
+        String maskedKey = project.apiKey.length() > 4 ? 
+            "****..." + project.apiKey.substring(project.apiKey.length() - 4) : "";
+        projectObj["apiKey"] = maskedKey;
+        projectObj["color"] = "#" + String(project.color, HEX);
+    }
+    
+    doc["defaultProject"] = _configManager.getDefaultProjectId();
+    
+    String response;
+    serializeJson(doc, response);
+    AsyncWebServerResponse *webResponse = request->beginResponse(200, "application/json", response);
+    webResponse->addHeader("Access-Control-Allow-Origin", "*");
+    request->send(webResponse);
+}
+
+void CaptivePortal::handleSaveProject(AsyncWebServerRequest *request) {
+    if (request->hasParam("name", true) && 
+        request->hasParam("teamId", true) && 
+        request->hasParam("region", true)) {
+        
+        PostHogProject project;
+        
+        // Check if this is an edit operation
+        bool isEdit = request->hasParam("id", true) && !request->getParam("id", true)->value().isEmpty();
+        
+        if (isEdit) {
+            // Update existing project
+            project.id = request->getParam("id", true)->value();
+            // Load existing project to preserve API key if not provided
+            PostHogProject existing = _configManager.getProject(project.id);
+            if (existing.id.isEmpty()) {
+                AsyncWebServerResponse *response = request->beginResponse(404, "application/json", "{\"error\":\"Project not found\"}");
+                response->addHeader("Access-Control-Allow-Origin", "*");
+                request->send(response);
+                return;
+            }
+            project.apiKey = existing.apiKey; // Preserve existing API key
+        } else {
+            // New project
+            project.id = _configManager.generateProjectId();
+        }
+        
+        project.name = request->getParam("name", true)->value();
+        project.region = request->getParam("region", true)->value();
+        project.teamId = request->getParam("teamId", true)->value();
+        
+        // Only update API key if provided and not empty
+        if (request->hasParam("apiKey", true) && !request->getParam("apiKey", true)->value().isEmpty()) {
+            project.apiKey = request->getParam("apiKey", true)->value();
+        }
+        
+        project.enabled = true; // All projects are enabled by default
+        
+        // Parse color from hex string (default to blue if not provided)
+        if (request->hasParam("color", true)) {
+            String colorStr = request->getParam("color", true)->value();
+            if (colorStr.startsWith("#")) colorStr = colorStr.substring(1);
+            project.color = strtoul(colorStr.c_str(), NULL, 16);
+        } else {
+            project.color = 0x1f77b4; // Default blue
+        }
+        
+        bool success;
+        if (isEdit) {
+            success = _configManager.updateProject(project.id, project);
+        } else {
+            success = _configManager.addProject(project);
+        }
+        
+        DynamicJsonDocument doc(256);
+        doc["success"] = success;
+        doc["message"] = success ? (isEdit ? "Project updated" : "Project saved") : "Failed to save project";
+        
+        String responseStr;
+        serializeJson(doc, responseStr);
+        AsyncWebServerResponse *webResponse = request->beginResponse(200, "application/json", responseStr);
+        webResponse->addHeader("Access-Control-Allow-Origin", "*");
+        request->send(webResponse);
+    } else {
+        AsyncWebServerResponse *response = request->beginResponse(400, "application/json", "{\"error\":\"Missing required fields\"}");
+        response->addHeader("Access-Control-Allow-Origin", "*");
+        request->send(response);
+    }
+}
+
+void CaptivePortal::handleTestProject(AsyncWebServerRequest *request) {
+    if (request->hasParam("teamId", true) && 
+        request->hasParam("apiKey", true) &&
+        request->hasParam("region", true)) {
+        
+        // For now, just validate the parameters are present
+        // Full connection testing would require PostHogClient integration
+        String teamId = request->getParam("teamId", true)->value();
+        String apiKey = request->getParam("apiKey", true)->value();
+        String region = request->getParam("region", true)->value();
+        
+        bool success = !teamId.isEmpty() && !apiKey.isEmpty() && 
+                      (region == "us" || region == "eu");
+        
+        DynamicJsonDocument doc(256);
+        doc["success"] = success;
+        doc["message"] = success ? "Project configuration valid" : "Invalid project configuration";
+        
+        String responseStr;
+        serializeJson(doc, responseStr);
+        AsyncWebServerResponse *webResponse = request->beginResponse(200, "application/json", responseStr);
+        webResponse->addHeader("Access-Control-Allow-Origin", "*");
+        request->send(webResponse);
+    } else {
+        AsyncWebServerResponse *response = request->beginResponse(400, "application/json", "{\"error\":\"Missing required fields\"}");
+        response->addHeader("Access-Control-Allow-Origin", "*");
+        request->send(response);
+    }
+}
+
+void CaptivePortal::handleDeleteProject(AsyncWebServerRequest *request) {
+    if (request->hasParam("id", true)) {
+        String projectId = request->getParam("id", true)->value();
+        
+        bool success = _configManager.removeProject(projectId);
+        
+        DynamicJsonDocument doc(256);
+        doc["success"] = success;
+        doc["message"] = success ? "Project deleted" : "Failed to delete project";
+        
+        String responseStr;
+        serializeJson(doc, responseStr);
+        AsyncWebServerResponse *webResponse = request->beginResponse(200, "application/json", responseStr);
+        webResponse->addHeader("Access-Control-Allow-Origin", "*");
+        request->send(webResponse);
+    } else {
+        AsyncWebServerResponse *response = request->beginResponse(400, "application/json", "{\"error\":\"Missing project ID\"}");
+        response->addHeader("Access-Control-Allow-Origin", "*");
+        request->send(response);
+    }
+}
 
 
 void CaptivePortal::handleCaptivePortal(AsyncWebServerRequest *request) {

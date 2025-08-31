@@ -28,16 +28,18 @@ struct CardConfig {
     String config;      ///< Configuration string (e.g., insight ID, animation speed)
     int order;          ///< Display order in the card stack
     String name;        ///< Human-readable name (e.g., "PostHog Insight", "Walking Animation")
+    String projectId;   ///< Associated PostHog project ID (empty for non-PostHog cards)
 
     /**
      * @brief Default constructor
      */
-    CardConfig() : type(CardType::INSIGHT), config(""), order(0), name("") {}
+    CardConfig() : type(CardType::INSIGHT), config(""), order(0), name(""), projectId("") {}
     
     /**
      * @brief Constructor with parameters
      */
-    CardConfig(CardType t, const String& c, int o, const String& n) : type(t), config(c), order(o), name(n) {}
+    CardConfig(CardType t, const String& c, int o, const String& n, const String& p = "") 
+        : type(t), config(c), order(o), name(n), projectId(p) {}
 };
 
 /**

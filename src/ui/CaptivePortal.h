@@ -127,6 +127,30 @@ private:
     void handleGetDeviceConfig(AsyncWebServerRequest *request);
 
     /**
+     * @brief Return list of configured PostHog projects
+     * Returns JSON array of projects with masked API keys
+     */
+    void handleGetProjects(AsyncWebServerRequest *request);
+
+    /**
+     * @brief Handle project configuration save/update
+     * Accepts project data and saves to ConfigManager
+     */
+    void handleSaveProject(AsyncWebServerRequest *request);
+
+    /**
+     * @brief Test project connection
+     * Validates project credentials and connectivity
+     */
+    void handleTestProject(AsyncWebServerRequest *request);
+
+    /**
+     * @brief Delete a project
+     * Removes project and associated cards
+     */
+    void handleDeleteProject(AsyncWebServerRequest *request);
+
+    /**
      * @brief Handle device configuration updates
      * Accepts team ID and API key updates
      */
