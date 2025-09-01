@@ -15,7 +15,7 @@ PostHogClient::PostHogClient(ConfigManager& config, EventQueue& eventQueue)
     // Subscribe to force refresh events
     _eventQueue.subscribe([this](const Event& event) {
         if (event.type == EventType::INSIGHT_FORCE_REFRESH) {
-            this->requestInsightData(event.insightId, true);
+            this->requestInsightData(event.insightId, event.projectId, true);
         }
     });
 }
@@ -24,17 +24,18 @@ String PostHogClient::buildBaseUrl() const {
     return "https://" + _config.getRegion() + ".posthog.com/api/projects/";
 }
 
-void PostHogClient::requestInsightData(const String& insight_id, bool forceRefresh) {
+void PostHogClient::requestInsightData(const String& insight_id, const String& project_id, bool forceRefresh) {
     // Add to queue for immediate fetch
     QueuedRequest request = {
         .insight_id = insight_id,
+        .project_id = project_id,
         .retry_count = 0,
         .force_refresh = forceRefresh
     };
     request_queue.push(request);
     
     // Add to our set of known insights for future refreshes
-    requested_insights.insert(insight_id);
+    requested_insights.insert({insight_id, project_id});
 }
 
 bool PostHogClient::isReady() const {
@@ -78,7 +79,7 @@ void PostHogClient::processQueue() {
     QueuedRequest request = request_queue.front();
     String response;
     
-    if (fetchInsight(request.insight_id, response, request.force_refresh)) {
+    if (fetchInsight(request.insight_id, request.project_id, response, request.force_refresh)) {
         // Publish to the event system
         publishInsightDataEvent(request.insight_id, response);
         request_queue.pop();
@@ -111,7 +112,7 @@ void PostHogClient::checkRefreshes() {
     }
     
     // Pick one insight to refresh
-    String refresh_id;
+    InsightKey refresh_key;
     
     // This cycles through insights in a round-robin fashion since sets are ordered
     static auto it = requested_insights.begin();
@@ -120,39 +121,63 @@ void PostHogClient::checkRefreshes() {
     }
     
     if (it != requested_insights.end()) {
-        refresh_id = *it;
+        refresh_key = *it;
         ++it;
     } else {
         // Reset if we're at the end
         it = requested_insights.begin();
         if (it != requested_insights.end()) {
-            refresh_id = *it;
+            refresh_key = *it;
             ++it;
         }
     }
     
-    if (!refresh_id.isEmpty()) {
+    if (!refresh_key.insight_id.isEmpty()) {
         String response;
-        if (fetchInsight(refresh_id, response)) {
+        if (fetchInsight(refresh_key.insight_id, refresh_key.project_id, response)) {
             // Publish to the event system
-            publishInsightDataEvent(refresh_id, response);
+            publishInsightDataEvent(refresh_key.insight_id, response);
         }
     }
 }
 
-String PostHogClient::buildInsightUrl(const String& insight_id, const char* refresh_mode) const {
-    String url = buildBaseUrl();
-    url += String(_config.getTeamId());
+String PostHogClient::buildInsightUrl(const String& insight_id, const String& project_id, const char* refresh_mode) const {
+    String url;
+    String teamId;
+    String apiKey;
+    String region;
+    
+    // If project_id is provided and we're in multi-project mode, use project-specific config
+    if (!project_id.isEmpty() && _config.isMultiProjectMode()) {
+        std::vector<PostHogProject> projects = _config.getProjects();
+        for (const auto& project : projects) {
+            if (project.id == project_id) {
+                teamId = project.teamId;
+                apiKey = project.apiKey;
+                region = project.region;
+                break;
+            }
+        }
+    } else {
+        // Fallback to legacy single-project config
+        teamId = String(_config.getTeamId());
+        apiKey = _config.getApiKey();
+        region = _config.getRegion();
+    }
+    
+    // Build URL with project-specific or fallback configuration
+    url = "https://" + region + ".posthog.com/api/projects/";
+    url += teamId;
     url += "/insights/?refresh=";
     url += refresh_mode;
     url += "&short_id=";
     url += insight_id;
     url += "&personal_api_key=";
-    url += _config.getApiKey();
+    url += apiKey;
     return url;
 }
 
-bool PostHogClient::fetchInsight(const String& insight_id, String& response, bool forceRefresh) {
+bool PostHogClient::fetchInsight(const String& insight_id, const String& project_id, String& response, bool forceRefresh) {
     if (!isReady() || WiFi.status() != WL_CONNECTED) {
         return false;
     }
@@ -165,7 +190,7 @@ bool PostHogClient::fetchInsight(const String& insight_id, String& response, boo
     
     // If force refresh is requested, go straight to blocking mode
     if (forceRefresh) {
-        String url = buildInsightUrl(insight_id, "blocking");
+        String url = buildInsightUrl(insight_id, project_id, "blocking");
         Serial.printf("Force refreshing insight %s\n", insight_id.c_str());
         
         _http.begin(_secureClient, url);
@@ -197,7 +222,7 @@ bool PostHogClient::fetchInsight(const String& insight_id, String& response, boo
     }
     
     // Normal flow: First, try to get cached data
-    String url = buildInsightUrl(insight_id, "force_cache");
+    String url = buildInsightUrl(insight_id, project_id, "force_cache");
     
     _http.begin(_secureClient, url);
     int httpCode = _http.GET();
@@ -240,7 +265,7 @@ bool PostHogClient::fetchInsight(const String& insight_id, String& response, boo
     
     // If we need to refresh, make a second request with blocking
     if (needsRefresh) {
-        url = buildInsightUrl(insight_id, "blocking");
+        url = buildInsightUrl(insight_id, project_id, "blocking");
         
         unsigned long refresh_start = millis();
         _http.begin(_secureClient, url);

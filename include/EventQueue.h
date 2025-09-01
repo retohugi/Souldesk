@@ -34,19 +34,22 @@ enum class EventType {
 struct Event {
     EventType type;                         // Type of event
     String insightId;                       // ID of the insight related to the event
+    String projectId;                       // PostHog project ID for multi-project support
     std::shared_ptr<InsightParser> parser;  // Optional parsed insight data
     String jsonData;                        // Raw JSON data for insights
     String title;                           // Title/name for card title updates
     
     Event() {}
     
-    Event(EventType t, const String& id) : type(t), insightId(id), parser(nullptr) {}
+    Event(EventType t, const String& id) : type(t), insightId(id), projectId(""), parser(nullptr) {}
+    
+    Event(EventType t, const String& id, const String& proj) : type(t), insightId(id), projectId(proj), parser(nullptr) {}
     
     Event(EventType t, const String& id, std::shared_ptr<InsightParser> p)
-        : type(t), insightId(id), parser(p) {}
+        : type(t), insightId(id), projectId(""), parser(p) {}
         
-    Event(EventType t, const String& id, const String& json)
-        : type(t), insightId(id), parser(nullptr), jsonData(json) {}
+    Event(EventType t, const String& id, const String& json, bool is_json)
+        : type(t), insightId(id), projectId(""), parser(nullptr), jsonData(json) {}
         
     // Constructor for title update events
     static Event createTitleUpdateEvent(const String& id, const String& title_text) {

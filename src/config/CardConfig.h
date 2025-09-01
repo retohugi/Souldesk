@@ -57,7 +57,7 @@ struct CardDefinition {
     String uiDescription;           ///< Description shown to user in web UI
     
     // Factory function to create an instance of the card's UI
-    std::function<lv_obj_t*(const String& configValue)> factory;
+    std::function<lv_obj_t*(const CardConfig& config)> factory;
     
     /**
      * @brief Default constructor

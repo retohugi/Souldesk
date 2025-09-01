@@ -47,7 +47,7 @@ public:
      * Adds insight to request queue with retry count of 0.
      * Will be processed in FIFO order.
      */
-    void requestInsightData(const String& insight_id, bool forceRefresh = false);
+    void requestInsightData(const String& insight_id, const String& project_id = "", bool forceRefresh = false);
     
     /**
      * @brief Check if client is ready for operation
@@ -69,11 +69,32 @@ public:
     
 private:
     /**
+     * @struct InsightKey
+     * @brief Tracks an insight with its associated project
+     */
+    struct InsightKey {
+        String insight_id;
+        String project_id;
+        
+        bool operator<(const InsightKey& other) const {
+            if (insight_id != other.insight_id) {
+                return insight_id < other.insight_id;
+            }
+            return project_id < other.project_id;
+        }
+        
+        bool operator==(const InsightKey& other) const {
+            return insight_id == other.insight_id && project_id == other.project_id;
+        }
+    };
+    
+    /**
      * @struct QueuedRequest
      * @brief Tracks a queued insight request
      */
     struct QueuedRequest {
         String insight_id;     ///< ID of insight to fetch
+        String project_id;     ///< PostHog project ID for multi-project support
         uint8_t retry_count;   ///< Number of retry attempts
         bool force_refresh;    ///< Force recalculation instead of cache
     };
@@ -83,7 +104,7 @@ private:
     EventQueue& _eventQueue;        ///< Event system
     
     // Request tracking
-    std::set<String> requested_insights;  ///< All known insight IDs
+    std::set<InsightKey> requested_insights;  ///< All known insight+project pairs
     std::queue<QueuedRequest> request_queue; ///< Queue of pending requests
     bool has_active_request;               ///< Request in progress flag
     WiFiClientSecure _secureClient;        ///< Secure WiFi client for HTTPS
@@ -131,7 +152,7 @@ private:
      * @param forceRefresh If true, force recalculation instead of using cache
      * @return true if fetch was successful
      */
-    bool fetchInsight(const String& insight_id, String& response, bool forceRefresh = false);
+    bool fetchInsight(const String& insight_id, const String& project_id, String& response, bool forceRefresh = false);
     
     /**
      * @brief Build insight API URL
@@ -140,7 +161,7 @@ private:
      * @param refresh_mode Cache control mode
      * @return Complete API URL
      */
-    String buildInsightUrl(const String& insight_id, const char* refresh_mode = "force_cache") const;
+    String buildInsightUrl(const String& insight_id, const String& project_id, const char* refresh_mode) const;
     
     // Event-related methods
     void publishInsightDataEvent(const String& insight_id, const String& response);

@@ -9,10 +9,11 @@
 
 
 InsightCard::InsightCard(lv_obj_t* parent, ConfigManager& config, EventQueue& eventQueue,
-                        const String& insightId, uint16_t width, uint16_t height)
+                        const String& insightId, const String& projectId, uint16_t width, uint16_t height)
     : _config(config)
     , _event_queue(eventQueue)
     , _insight_id(insightId)
+    , _project_id(projectId)
     , _current_title("")
     , _card(nullptr)
     , _title_label(nullptr)
@@ -226,6 +227,7 @@ bool InsightCard::handleButtonPress(uint8_t button_index) {
         Event refreshEvent;
         refreshEvent.type = EventType::INSIGHT_FORCE_REFRESH;
         refreshEvent.insightId = _insight_id;
+        refreshEvent.projectId = _project_id;
         _event_queue.publishEvent(refreshEvent);
         
         // Update UI to show we're refreshing

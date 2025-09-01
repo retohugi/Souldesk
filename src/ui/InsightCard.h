@@ -37,6 +37,7 @@ public:
      * @param config Configuration manager for persistent storage
      * @param eventQueue Event queue for receiving data updates
      * @param insightId Unique identifier for this insight
+     * @param projectId PostHog project ID for multi-project support
      * @param width Card width in pixels
      * @param height Card height in pixels
      * 
@@ -46,7 +47,7 @@ public:
      * Subscribes to INSIGHT_DATA_RECEIVED events for the specified insightId.
      */
     InsightCard(lv_obj_t* parent, ConfigManager& config, EventQueue& eventQueue,
-                const String& insightId, uint16_t width, uint16_t height);
+                const String& insightId, const String& projectId, uint16_t width, uint16_t height);
     
     /**
      * @brief Destructor - safely cleans up UI resources
@@ -136,6 +137,7 @@ private:
     ConfigManager& _config;              ///< Configuration manager reference
     EventQueue& _event_queue;            ///< Event queue reference
     String _insight_id;                  ///< Unique insight identifier
+    String _project_id;                  ///< PostHog project ID for multi-project support
     String _current_title;               ///< Current card title
     InsightParser::InsightType _current_type; ///< Current visualization type
     

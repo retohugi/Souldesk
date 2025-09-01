@@ -217,13 +217,14 @@ void CardController::initializeCardTypes() {
     insightDef.needsConfigInput = true;
     insightDef.configInputLabel = "Insight ID";
     insightDef.uiDescription = "Insight cards let you keep an eye on PostHog data";
-    insightDef.factory = [this](const String& configValue) -> lv_obj_t* {
-        // Create new insight card using the insight ID
+    insightDef.factory = [this](const CardConfig& config) -> lv_obj_t* {
+        // Create new insight card using the insight ID and project info
         InsightCard* newCard = new InsightCard(
             screen,
             configManager,
             eventQueue,
-            configValue,
+            config.config,  // insight ID
+            config.projectId,  // project ID
             screenWidth,
             screenHeight
         );
@@ -237,8 +238,8 @@ void CardController::initializeCardTypes() {
             cardStack->registerInputHandler(newCard->getCard(), newCard);
             
             // Request data for this insight immediately
-            posthogClient.requestInsightData(configValue);
-            Serial.printf("Requested insight data for: %s\n", configValue.c_str());
+            posthogClient.requestInsightData(config.config, config.projectId);
+            Serial.printf("Requested insight data for: %s (project: %s)\n", config.config.c_str(), config.projectId.c_str());
             
             return newCard->getCard();
         }
@@ -256,7 +257,7 @@ void CardController::initializeCardTypes() {
     friendDef.needsConfigInput = false;
     friendDef.configInputLabel = "";
     friendDef.uiDescription = "Get reassurance from Max the hedgehog";
-    friendDef.factory = [this](const String& configValue) -> lv_obj_t* {
+    friendDef.factory = [this](const CardConfig& config) -> lv_obj_t* {
         // Create new friend card (ignore configValue for now)
         FriendCard* newCard = new FriendCard(screen);
         
@@ -286,7 +287,7 @@ void CardController::initializeCardTypes() {
     helloDef.needsConfigInput = false;
     helloDef.configInputLabel = "";
     helloDef.uiDescription = "A simple greeting card";
-    helloDef.factory = [this](const String& configValue) -> lv_obj_t* {
+    helloDef.factory = [this](const CardConfig& config) -> lv_obj_t* {
         HelloWorldCard* newCard = new HelloWorldCard(screen);
         
         if (newCard && newCard->getCard()) {
@@ -312,7 +313,7 @@ void CardController::initializeCardTypes() {
     flappyDef.needsConfigInput = false;
     flappyDef.configInputLabel = "";
     flappyDef.uiDescription = "One button. Endless frustration. Infinite glory.";
-    flappyDef.factory = [this](const String& configValue) -> lv_obj_t* {
+    flappyDef.factory = [this](const CardConfig& config) -> lv_obj_t* {
         FlappyHogCard* newCard = new FlappyHogCard(screen);
         
         if (newCard && newCard->getCard()) {
@@ -338,7 +339,7 @@ void CardController::initializeCardTypes() {
     questionDef.needsConfigInput = false;
     questionDef.configInputLabel = "";
     questionDef.uiDescription = "Break the ice with your coworkers.";
-    questionDef.factory = [this](const String& configValue) -> lv_obj_t* {
+    questionDef.factory = [this](const CardConfig& config) -> lv_obj_t* {
         QuestionCard* newCard = new QuestionCard(screen);
         
         if (newCard && newCard->getCard()) {
@@ -364,7 +365,7 @@ void CardController::initializeCardTypes() {
     paddleDef.needsConfigInput = false;
     paddleDef.configInputLabel = "";
     paddleDef.uiDescription = "Classic Paddle game - beat the AI!";
-    paddleDef.factory = [this](const String& configValue) -> lv_obj_t* {
+    paddleDef.factory = [this](const CardConfig& config) -> lv_obj_t* {
         PaddleCard* newCard = new PaddleCard(screen);
         
         if (newCard && newCard->getCard()) {
@@ -464,7 +465,7 @@ void CardController::reconcileCards(const std::vector<CardConfig>& newConfigs) {
             
             if (it != registeredCardTypes.end() && it->factory) {
                 // Create the card using the factory function
-                lv_obj_t* cardObj = it->factory(config.config);
+                lv_obj_t* cardObj = it->factory(config);
                 if (cardObj) {
                     cardStack->addCard(cardObj);
                     

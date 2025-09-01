@@ -40,7 +40,7 @@ bool EventQueue::publishEvent(EventType eventType, const String& insightId, cons
         Serial.printf("Large JSON detected (%u bytes), handling via event\n", jsonData.length());
     }
     
-    Event event(eventType, insightId, jsonData);
+    Event event(eventType, insightId, jsonData, true);
     return publishEvent(event);
 }
 
