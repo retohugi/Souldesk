@@ -319,19 +319,49 @@ struct CardConfig {
 - Project name/icon in card header
 - Project-specific error states
 
-**Card Configuration UI:**
+**Card Configuration Requirements:**
+
+For PostHog Insight Cards, the configuration UI must now include:
+1. **Project Selection Dropdown**: 
+   - Populated from configured projects via `/api/projects`
+   - Display project name as label, use project ID as value
+   - Required field for insight cards
+2. **Insight ID Input**:
+   - Text input for PostHog insight ID (as before)
+   - Manual entry from PostHog dashboard URL
+   - Required field for insight cards
+
+**Updated Card Configuration UI:**
 ```html
-<div class="card-config">
-    <select id="card-project" required>
-        <option value="">Select Project</option>
-        <!-- Populated from projects list -->
-    </select>
-    <select id="card-insight" required>
-        <option value="">Select Insight</option>
-        <!-- Populated based on selected project -->
-    </select>
+<div class="card-config insight-card-config">
+    <div class="form-group">
+        <label for="card-project">PostHog Project</label>
+        <select id="card-project" required>
+            <option value="">Select Project</option>
+            <!-- Populated dynamically from /api/projects -->
+        </select>
+    </div>
+    
+    <div class="form-group">
+        <label for="card-insight-id">Insight ID</label>
+        <input type="text" id="card-insight-id" placeholder="e.g., AbCdEf123" required>
+        <p class="tip">
+            Copy the insight ID from your PostHog dashboard URL. 
+            Example: https://app.posthog.com/insights/AbCdEf123
+        </p>
+    </div>
+    
+    <div class="form-group">
+        <button type="button" onclick="testInsightConnection()">Test Insight</button>
+        <span id="insight-test-result"></span>
+    </div>
 </div>
 ```
+
+**API Updates:**
+- `/api/cards/configured` GET: Must include `projectId` field in response
+- `/api/cards/configured` POST: Must accept `projectId` field in request
+- New endpoint: `/api/cards/test-insight` for testing insight connections
 
 ### 5. Implementation Phases
 

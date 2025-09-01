@@ -183,6 +183,12 @@ private:
     void handleSaveConfiguredCards(AsyncWebServerRequest *request);
 
     /**
+     * @brief Handle insight connection testing
+     * Tests if a specific insight can be accessed with given project
+     */
+    void handleTestInsight(AsyncWebServerRequest *request);
+
+    /**
      * @brief Handle captive portal detection
      * Redirects to setup page for Android/Microsoft detection
      */

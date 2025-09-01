@@ -140,7 +140,8 @@ async function loadProjects() {
     try {
         const response = await fetch('/api/projects');
         const data = await response.json();
-        allProjects = data.projects || []; // Store globally
+        // API now returns plain array, not wrapped in projects object
+        allProjects = Array.isArray(data) ? data : (data.projects || []); // Store globally
         renderProjectsOverview(allProjects);
     } catch (error) {
         console.error('Failed to load projects:', error);
@@ -418,7 +419,16 @@ function updateAvailableCardsList() {
                 </div>
                 <div class="available-card-actions">
                     ${cardDef.needsConfigInput ? `
-                        <input type="text" class="config-input" placeholder="${cardDef.configInputLabel}" id="config-${cardDef.id}">
+                        <div class="card-config-inputs">
+                            ${cardDef.id === 'INSIGHT' ? `
+                                <select class="project-select" id="project-${cardDef.id}" required>
+                                    <option value="">Select Project</option>
+                                </select>
+                                <input type="text" class="config-input" placeholder="${cardDef.configInputLabel}" id="config-${cardDef.id}">
+                            ` : `
+                                <input type="text" class="config-input" placeholder="${cardDef.configInputLabel}" id="config-${cardDef.id}">
+                            `}
+                        </div>
                     ` : ''}
                     <button class="add-card-btn" onclick="addCardFromList('${cardDef.id}')" ${!canAdd ? 'style="display:none"' : ''}>
                         + Add card
@@ -449,6 +459,52 @@ function updateAvailableCardsList() {
             item.remove();
         }
     });
+    
+    // Populate project dropdowns for insight cards
+    populateProjectDropdowns();
+}
+
+// Populate project dropdowns for insight card configuration
+async function populateProjectDropdowns() {
+    const projectSelects = document.querySelectorAll('.project-select');
+    if (projectSelects.length === 0) return;
+    
+    // Use already loaded projects if available, otherwise fetch them
+    let projectsToUse = allProjects;
+    if (!projectsToUse || projectsToUse.length === 0) {
+        try {
+            const response = await fetch('/api/projects');
+            if (!response.ok) {
+                console.error('Failed to fetch projects:', response.status);
+                return;
+            }
+            
+            const data = await response.json();
+            projectsToUse = Array.isArray(data) ? data : (data.projects || []);
+            allProjects = projectsToUse; // Cache for later use
+        } catch (error) {
+            console.error('Error loading projects for dropdown:', error);
+            return;
+        }
+    }
+    
+    console.log('Loaded', projectsToUse.length, 'projects for dropdown');
+    
+    // Populate each project select dropdown
+    projectSelects.forEach(select => {
+        // Clear existing options except the first one
+        while (select.children.length > 1) {
+            select.removeChild(select.lastChild);
+        }
+        
+        // Add project options
+        projectsToUse.forEach(project => {
+            const option = document.createElement('option');
+            option.value = project.id;
+            option.textContent = project.name;
+            select.appendChild(option);
+        });
+    });
 }
 
 // Save card configuration to device
@@ -477,6 +533,7 @@ async function saveCardConfiguration() {
 
 // Add new card from the list interface
 function addCardFromList(cardTypeId) {
+    console.log('addCardFromList called with:', cardTypeId);
     const globalActionStatusEl = document.getElementById('global-action-status');
     
     // Find the card definition
@@ -486,10 +543,35 @@ function addCardFromList(cardTypeId) {
         return;
     }
     
+    console.log('Found card definition:', cardDef);
+    
     // Get config value if needed
     let cardConfig = '';
+    let projectId = '';
+    
     if (cardDef.needsConfigInput) {
+        // For insight cards, also get the project selection
+        if (cardTypeId === 'INSIGHT') {
+            const projectSelect = document.getElementById(`project-${cardTypeId}`);
+            console.log('Project select element:', projectSelect, 'value:', projectSelect?.value);
+            if (!projectSelect || !projectSelect.value) {
+                if (globalActionStatusEl) {
+                    globalActionStatusEl.textContent = 'Please select a PostHog project';
+                    globalActionStatusEl.className = 'status-message error';
+                    globalActionStatusEl.style.display = 'block';
+                    setTimeout(() => {
+                        globalActionStatusEl.style.display = 'none';
+                        globalActionStatusEl.textContent = '';
+                        globalActionStatusEl.className = 'status-message';
+                    }, 3000);
+                }
+                return;
+            }
+            projectId = projectSelect.value;
+        }
+        
         const configInput = document.getElementById(`config-${cardTypeId}`);
+        console.log('Config input element:', configInput, 'value:', configInput?.value);
         if (!configInput || !configInput.value.trim()) {
             // Show error
             if (globalActionStatusEl) {
@@ -507,13 +589,18 @@ function addCardFromList(cardTypeId) {
         cardConfig = configInput.value.trim();
     }
     
+    console.log('Creating card with config:', cardConfig, 'projectId:', projectId);
+    
     // Create new card configuration
     const newCard = {
         type: cardTypeId,
         config: cardConfig,
         name: cardDef.name,
-        order: configuredCards.length // Add to end
+        order: configuredCards.length, // Add to end
+        projectId: projectId // Include project ID for multi-project support
     };
+    
+    console.log('New card object:', newCard);
     
     // Add to current configuration
     configuredCards.push(newCard);
@@ -526,6 +613,14 @@ function addCardFromList(cardTypeId) {
         const configInput = document.getElementById(`config-${cardTypeId}`);
         if (configInput) {
             configInput.value = '';
+        }
+        
+        // Also clear project selection for insight cards
+        if (cardTypeId === 'INSIGHT') {
+            const projectSelect = document.getElementById(`project-${cardTypeId}`);
+            if (projectSelect) {
+                projectSelect.value = '';
+            }
         }
     }
     
@@ -568,6 +663,17 @@ function updateCardsListUI() {
         item.draggable = true;
         item.dataset.cardIndex = index;
         
+        // Create description with project info for insight cards
+        let cardDescription = `Type: ${card.type}`;
+        if (card.config) {
+            cardDescription += ` • Config: ${card.config}`;
+        }
+        if (card.projectId && card.type === 'INSIGHT') {
+            // Find project name for display
+            const projectName = getProjectNameById(card.projectId);
+            cardDescription += ` • Project: ${projectName}`;
+        }
+        
         item.innerHTML = `
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <div style="display: flex; align-items: center;">
@@ -575,7 +681,7 @@ function updateCardsListUI() {
                     <div>
                         <strong>${card.name}</strong>
                         <br>
-                        <small>Type: ${card.type}${card.config ? ` • Config: ${card.config}` : ''}</small>
+                        <small>${cardDescription}</small>
                     </div>
                 </div>
                 <div>
@@ -596,6 +702,16 @@ function updateCardsListUI() {
     });
     
     container.appendChild(list);
+}
+
+// Helper function to get project name by ID
+function getProjectNameById(projectId) {
+    if (!allProjects || !Array.isArray(allProjects)) {
+        return projectId; // fallback to ID if projects not loaded
+    }
+    
+    const project = allProjects.find(p => p.id === projectId);
+    return project ? project.name : projectId;
 }
 
 // Drag and drop variables

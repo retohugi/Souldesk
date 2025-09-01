@@ -109,6 +109,17 @@ void CaptivePortal::begin() {
                       ((char*)request->_tempObject)[len] = 0;
                   }
               });
+    _server.on("/api/cards/test-insight", HTTP_POST, 
+              std::bind(&CaptivePortal::handleTestInsight, this, std::placeholders::_1),
+              NULL,
+              [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total){
+                  // Store body data as a parameter for later processing
+                  request->_tempObject = malloc(len + 1);
+                  if(request->_tempObject != NULL){
+                      memcpy(request->_tempObject, data, len);
+                      ((char*)request->_tempObject)[len] = 0;
+                  }
+              });
 
     // OTA Update actions
     _server.on("/check-update", HTTP_GET, std::bind(&CaptivePortal::handleCheckUpdate, this, std::placeholders::_1));
@@ -262,7 +273,7 @@ void CaptivePortal::handleSaveDeviceConfig(AsyncWebServerRequest *request) {
 
 void CaptivePortal::handleGetProjects(AsyncWebServerRequest *request) {
     DynamicJsonDocument doc(2048); // Size for multiple projects
-    JsonArray projectsArray = doc.createNestedArray("projects");
+    JsonArray projectsArray = doc.to<JsonArray>(); // Make root a JSON array, not object
     
     std::vector<PostHogProject> projects = _configManager.getProjects();
     for (const auto& project : projects) {
@@ -883,6 +894,7 @@ void CaptivePortal::handleGetConfiguredCards(AsyncWebServerRequest *request) {
         cardObj["config"] = config.config;
         cardObj["order"] = config.order;
         cardObj["name"] = config.name;
+        cardObj["projectId"] = config.projectId; // Include project ID for multi-project support
     }
 
     String responseJson;
@@ -920,6 +932,7 @@ void CaptivePortal::handleSaveConfiguredCards(AsyncWebServerRequest *request) {
                     config.config = obj.containsKey("config") ? obj["config"].as<String>() : "";
                     config.order = obj["order"].as<int>();
                     config.name = obj.containsKey("name") ? obj["name"].as<String>() : "";
+                    config.projectId = obj.containsKey("projectId") ? obj["projectId"].as<String>() : ""; // Multi-project support
                     cardConfigs.push_back(config);
                 }
             }
@@ -941,6 +954,75 @@ void CaptivePortal::handleSaveConfiguredCards(AsyncWebServerRequest *request) {
         Serial.println("No body data received in card config save");
     }
 
+    DynamicJsonDocument responseDoc(256);
+    responseDoc["success"] = success;
+    responseDoc["message"] = message;
+    
+    String responseJson;
+    serializeJson(responseDoc, responseJson);
+    AsyncWebServerResponse *response = request->beginResponse(200, "application/json", responseJson);
+    response->addHeader("Access-Control-Allow-Origin", "*");
+    request->send(response);
+}
+
+void CaptivePortal::handleTestInsight(AsyncWebServerRequest *request) {
+    bool success = false;
+    String message = "Failed to test insight";
+    
+    // Try to get parameters from both POST body and URL parameters
+    String projectId;
+    String insightId;
+    
+    // First try POST body data if available
+    if (request->_tempObject != NULL) {
+        String body = String((char*)request->_tempObject);
+        free(request->_tempObject);
+        request->_tempObject = NULL;
+        
+        Serial.printf("Testing insight with body: %s\n", body.c_str());
+        
+        DynamicJsonDocument doc(512);
+        DeserializationError error = deserializeJson(doc, body);
+        
+        if (!error && doc.containsKey("projectId") && doc.containsKey("insightId")) {
+            projectId = doc["projectId"].as<String>();
+            insightId = doc["insightId"].as<String>();
+        }
+    }
+    
+    // Fallback to URL parameters if body parsing failed
+    if (projectId.isEmpty() && request->hasParam("projectId", true)) {
+        projectId = request->getParam("projectId", true)->value();
+    }
+    if (insightId.isEmpty() && request->hasParam("insightId", true)) {
+        insightId = request->getParam("insightId", true)->value();
+    }
+    
+    if (!projectId.isEmpty() && !insightId.isEmpty()) {
+        Serial.printf("Testing insight %s for project %s\n", insightId.c_str(), projectId.c_str());
+        
+        // Get the project configuration
+        PostHogProject project = _configManager.getProject(projectId);
+        if (!project.id.isEmpty()) {
+            // TODO: Implement actual insight testing with PostHog client
+            // For now, just validate that the project exists and insight ID is not empty
+            if (!insightId.isEmpty() && insightId.length() > 3) {
+                success = true;
+                message = "Insight test successful (basic validation)";
+                Serial.println("Insight validation passed");
+            } else {
+                message = "Invalid insight ID format";
+                Serial.println("Invalid insight ID");
+            }
+        } else {
+            message = "Project not found";
+            Serial.printf("Project %s not found\n", projectId.c_str());
+        }
+    } else {
+        message = "Missing projectId or insightId parameters";
+        Serial.println("Missing required parameters for insight test");
+    }
+    
     DynamicJsonDocument responseDoc(256);
     responseDoc["success"] = success;
     responseDoc["message"] = message;

@@ -415,3 +415,20 @@ select::-ms-expand {
     border: 2px solid var(--border-color);
     margin-top: 1rem;
 }
+
+/* Card configuration inputs */
+.card-config-inputs {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.project-select {
+    width: 100%;
+    margin-bottom: 0.3rem;
+}
+
+.config-input {
+    width: 100%;
+}
