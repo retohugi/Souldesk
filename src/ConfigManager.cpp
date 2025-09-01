@@ -462,42 +462,26 @@ bool ConfigManager::hasProject(const String& projectId) {
     return false;
 }
 
-PostHogProject ConfigManager::getDefaultProject() {
-    // Return first project if any exist, otherwise return empty project
-    std::vector<PostHogProject> projects = getProjects();
-    if (!projects.empty()) {
-        return projects[0];
-    }
-    
-    // Return empty project if none found
-    return PostHogProject();
-}
-
 bool ConfigManager::migrateToMultiProject() {
     // Check if already migrated
     if (isMultiProjectMode()) {
         return true;
     }
     
-    // Check if we have existing single-project configuration
-    if (getTeamId() == NO_TEAM_ID || getApiKey().isEmpty()) {
+    // Get current projects (which will create a legacy project if single-project config exists)
+    std::vector<PostHogProject> projects = getProjects();
+    
+    if (projects.empty()) {
         // No existing config, just enable multi-project mode
         _preferences.putBool(_multiProjectModeKey, true);
         commit();
         return true;
     }
     
-    // Create default project from existing config
-    PostHogProject defaultProject;
-    defaultProject.id = generateProjectId();
-    defaultProject.name = "Main Product";
-    defaultProject.region = getRegion();
-    defaultProject.teamId = String(getTeamId());
-    defaultProject.apiKey = getApiKey();
-    defaultProject.color = 0x1f77b4;
+    // Update the legacy project ID to use a generated one
+    projects[0].id = generateProjectId();
     
-    // Save as projects array
-    std::vector<PostHogProject> projects = { defaultProject };
+    // Save the projects array to persistent storage
     bool success = saveProjects(projects);
     
     if (success) {

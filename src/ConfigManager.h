@@ -204,24 +204,6 @@ public:
     bool hasProject(const String& projectId);
 
     /**
-     * @brief Set the default project
-     * @param projectId The ID of the project to set as default
-     */
-    void setDefaultProject(const String& projectId);
-
-    /**
-     * @brief Get the default project ID
-     * @return The ID of the default project, or empty string if none set
-     */
-    String getDefaultProjectId();
-
-    /**
-     * @brief Get the default project configuration
-     * @return PostHogProject configuration of default project
-     */
-    PostHogProject getDefaultProject();
-
-    /**
      * @brief Migrate from single to multi-project configuration
      * @return true if migration successful, false otherwise
      */

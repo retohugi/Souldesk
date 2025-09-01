@@ -120,11 +120,6 @@ std::vector<PostHogProject> getProjects();
 PostHogProject getProject(const String& projectId);
 bool hasProject(const String& projectId);
 
-// Default project handling
-void setDefaultProject(const String& projectId);
-String getDefaultProjectId();
-PostHogProject getDefaultProject();
-
 // Migration from single to multi-project
 bool migrateToMultiProject();
 ```
@@ -390,7 +385,7 @@ struct CardConfig {
 ### 7. Migration Strategy
 
 #### 7.1 Backward Compatibility
-- Existing single-project configurations automatically become "Default Project"
+- Existing single-project configurations automatically become first project in multi-project array
 - Existing cards remain functional
 - No breaking changes to current API endpoints
 
@@ -398,22 +393,26 @@ struct CardConfig {
 ```cpp
 bool ConfigManager::migrateToMultiProject() {
     // Check if already migrated
-    if (hasKey("projects")) return true;
+    if (isMultiProjectMode()) return true;
     
-    // Create default project from existing config
-    PostHogProject defaultProject = {
-        .id = generateProjectId(), // Auto-generated
-        .name = "Main Product", 
-        .region = getRegion(),
-        .teamId = getTeamId(),
-        .apiKey = getApiKey(),
-        .enabled = true,
-        .color = 0x1f77b4
-    };
+    // Get current projects (creates legacy project if single-project config exists)
+    std::vector<PostHogProject> projects = getProjects();
     
-    // Save as projects array
-    std::vector<PostHogProject> projects = { defaultProject };
-    return saveProjects(projects);
+    if (projects.empty()) {
+        // No existing config, just enable multi-project mode
+        _preferences.putBool(_multiProjectModeKey, true);
+        return true;
+    }
+    
+    // Update the legacy project ID to use a generated one
+    projects[0].id = generateProjectId();
+    
+    // Save projects and enable multi-project mode
+    bool success = saveProjects(projects);
+    if (success) {
+        _preferences.putBool(_multiProjectModeKey, true);
+    }
+    return success;
 }
 ```
 
@@ -451,7 +450,6 @@ bool ConfigManager::migrateToMultiProject() {
             "color": "#2ca02c"
         }
     ],
-    "defaultProject": "webapp_analytics",
     "cards": [
         {
             "cardId": "card1",
@@ -502,8 +500,6 @@ void CaptivePortal::handleProjectsConfig(AsyncWebServerRequest *request) {
         projectObj["enabled"] = project.enabled;
         projectObj["color"] = String(project.color, HEX);
     }
-    
-    doc["defaultProject"] = _configManager.getDefaultProjectId();
     
     String response;
     serializeJson(doc, response);
@@ -628,7 +624,7 @@ private:
 
 **Graceful Degradation:**
 - Disable projects when memory is low
-- Prioritize default project when resources are constrained  
+- Prioritize first/primary project when resources are constrained  
 - Cache eviction for least recently used insights
 - Simplified UI when many projects are configured
 
